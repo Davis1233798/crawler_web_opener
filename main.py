@@ -60,6 +60,10 @@ async def browser_worker(worker_id, queue, bot):
     Worker 執行任務
     """
     logging.info(f"Worker {worker_id} started.")
+    
+    # 每個 worker 啟動時隨機延遲(避免同時啟動)
+    await asyncio.sleep(random.uniform(1, 5))
+    
     while True:
         task = await queue.get()
         url = task['url']
@@ -70,11 +74,18 @@ async def browser_worker(worker_id, queue, bot):
             return not queue.empty()
         
         try:
+            # 任務執行前隨機延遲(模擬真實用戶行為)
+            await asyncio.sleep(random.uniform(0.5, 3.0))
+            
             await bot.run(url, proxy, min_duration=DURATION, should_exit_callback=should_exit)
         except Exception as e:
             logging.error(f"Worker {worker_id} error: {e}")
         finally:
             queue.task_done()
+            
+            # 任務完成後短暫延遲
+            await asyncio.sleep(random.uniform(0.2, 1.0))
+            
             logging.info(f"Worker {worker_id} finished task. Queue size: {queue.qsize()}")
 
 

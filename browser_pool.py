@@ -30,22 +30,34 @@ class BrowserPool:
         
         self.playwright = await async_playwright().start()
         
-        # 啟動配置
-        launch_args = ['--disable-blink-features=AutomationControlled']
-        launch_headless_param = False
-        
-        if self.headless:
-            launch_args.append('--headless=new')
-        
         # 啟動所有 browser
         for i in range(self.pool_size):
             try:
+                # 為每個 browser 生成唯一的啟動參數(增強隔離)
+                launch_args = [
+                    '--disable-blink-features=AutomationControlled',
+                    f'--user-data-dir=/tmp/chrome_profile_{i}_{random.randint(1000, 9999)}',  # 獨立用戶數據
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-infobars',
+                    '--window-position=0,0',
+                    '--ignore-certifcate-errors',
+                    '--ignore-certifcate-errors-spki-list',
+                    f'--window-size={random.randint(1200, 1920)},{random.randint(800, 1080)}',  # 隨機視窗大小
+                ]
+                
+                launch_headless_param = False
+                
+                if self.headless:
+                    launch_args.append('--headless=new')
+                
                 browser = await self.playwright.chromium.launch(
                     headless=launch_headless_param,
                     args=launch_args
                 )
                 self.browsers.append(browser)
-                logging.info(f"Browser {i+1}/{self.pool_size} launched.")
+                logging.info(f"Browser {i+1}/{self.pool_size} launched with unique profile.")
             except Exception as e:
                 logging.error(f"Failed to launch browser {i+1}: {e}")
         
@@ -70,8 +82,11 @@ class BrowserPool:
         # 隨機選擇一個 browser
         browser = random.choice(self.browsers)
         
-        # 生成隨機指紋
+        # 生成隨機指紋(增強版)
         fingerprint = get_random_fingerprint()
+        
+        # 提取額外參數
+        fingerprint_extra = fingerprint.pop('_extra', None)
         
         # Proxy 配置
         proxy_config = None
@@ -84,11 +99,13 @@ class BrowserPool:
             **fingerprint
         )
         
-        # 注入反檢測腳本
-        await context.add_init_script(get_stealth_script())
+        # 注入增強版反檢測腳本
+        await context.add_init_script(get_stealth_script(fingerprint_extra))
         
         # 記錄活躍的 context
         self.contexts.append(context)
+        
+        logging.debug(f"Created context with fingerprint: UA={fingerprint.get('user_agent', 'N/A')[:50]}...")
         
         return context
     
