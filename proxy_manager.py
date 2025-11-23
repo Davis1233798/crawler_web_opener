@@ -78,10 +78,40 @@ def fetch_proxyscrape_proxies():
         logging.error(f"Error fetching ProxyScrape proxies: {e}")
         return []
 
+import json
+
+def fetch_local_proxies(filename="proxies.json"):
+    """
+    Fetches proxies from a local JSON file.
+    Expected format: [{"proxy": "protocol://ip:port", ...}, ...]
+    Returns a list of proxy strings.
+    """
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        proxies = []
+        for item in data:
+            proxy = item.get("proxy")
+            if proxy:
+                proxies.append(proxy)
+        
+        logging.info(f"Fetched {len(proxies)} proxies from {filename}.")
+        return proxies
+    except FileNotFoundError:
+        logging.error(f"File {filename} not found.")
+        return []
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from {filename}.")
+        return []
+    except Exception as e:
+        logging.error(f"Error reading local proxies: {e}")
+        return []
+
 def fetch_all_proxies(limit=100):
     """
     Fetches proxies from available sources based on SCRAPY_TYPE.
-    SCRAPY_TYPE: 1=Geonode, 2=ProxyScrape, ALL=Both
+    SCRAPY_TYPE: 1=Geonode, 2=ProxyScrape, 3=Local File (proxies.json), ALL=All sources
     """
     proxies = []
     scrapy_type = os.getenv("SCRAPY_TYPE", "ALL").upper()
@@ -95,6 +125,10 @@ def fetch_all_proxies(limit=100):
     # Fetch from ProxyScrape (Type 2 or ALL)
     if scrapy_type == "2" or scrapy_type == "ALL":
         proxies.extend(fetch_proxyscrape_proxies())
+
+    # Fetch from Local File (Type 3 or ALL)
+    if scrapy_type == "3" or scrapy_type == "ALL":
+        proxies.extend(fetch_local_proxies())
     
     # Deduplicate
     unique_proxies = list(set(proxies))

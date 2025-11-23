@@ -23,7 +23,7 @@ HEADLESS=false
 - `THREADS`: Number of concurrent browsers (default 10).
 - `DURATION`: Minimum duration (seconds) for each session.
 - `HEADLESS`: Set to `true` to run without visible browser windows (required for most Linux servers).
-- `SCRAPY_TYPE`: Proxy source selection (1=Geonode, 2=ProxyScrape, ALL=Both). Default is ALL.
+- `SCRAPY_TYPE`: 代理來源選擇 (1=Geonode, 2=ProxyScrape, 3=本地文件 proxies.json, ALL=全部)。預設為 ALL。
 
 Edit `target_site.txt` to add the URLs you want to visit.
 
