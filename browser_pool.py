@@ -36,7 +36,6 @@ class BrowserPool:
                 # 為每個 browser 生成唯一的啟動參數(增強隔離)
                 launch_args = [
                     '--disable-blink-features=AutomationControlled',
-                    f'--user-data-dir=/tmp/chrome_profile_{i}_{random.randint(1000, 9999)}',  # 獨立用戶數據
                     '--disable-dev-shm-usage',
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -57,7 +56,7 @@ class BrowserPool:
                     args=launch_args
                 )
                 self.browsers.append(browser)
-                logging.info(f"Browser {i+1}/{self.pool_size} launched with unique profile.")
+                logging.info(f"Browser {i+1}/{self.pool_size} launched successfully.")
             except Exception as e:
                 logging.error(f"Failed to launch browser {i+1}: {e}")
         
