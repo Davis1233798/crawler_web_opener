@@ -33,5 +33,6 @@
 - [x] **Refinements**
     - [x] Add second proxy source (ProxyScrape)
     - [x] Integrate multiple sources in `proxy_manager.py`
-    - [ ] Implement `SCRAPY_TYPE` config (1=Geonode, 2=ProxyScrape)
-    - [ ] Update proxy sources with Elite anonymity filter
+    - [x] Implement `SCRAPY_TYPE` config (1=Geonode, 2=ProxyScrape, ALL=Both)
+    - [x] Update proxy sources with Elite anonymity filter
+    - [x] Push to GitHub (`https://github.com/Davis1233798/crawler_web_opener.git`)

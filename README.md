@@ -1,19 +1,4 @@
 # Proxy Web Opener
-
-A multi-threaded web traffic simulator that uses proxies to visit target websites and simulate user activity.
-
-## Features
-
-- **Concurrent Browsers**: Maintains a fixed number of active browser sessions (default 10).
-- **Continuous Operation**: Automatically extends browser sessions if no new proxies are available, ensuring constant activity.
-- **Proxy Management**: Fetches free proxies (HTTP/SOCKS) from Geonode, validates them, and caches working ones.
-- **Human-like Interaction**: Simulates scrolling and clicking while avoiding popups and keeping interactions on the target page.
-- **Cross-Platform**: Runs on Windows, Linux, and macOS.
-- **Headless Mode**: Configurable for server environments.
-
-## Installation
-
-1.  **Install Python 3.8+**
 2.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
