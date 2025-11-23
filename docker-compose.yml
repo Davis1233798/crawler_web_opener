@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  crawler:
+    build: .
+    container_name: proxy_crawler
+    restart: unless-stopped
+    environment:
+      - THREADS=10
+      - DURATION=30
+      - HEADLESS=true
+    volumes:
+      # Persist the proxy cache
+      - ./proxies.txt:/app/proxies.txt
+      # Allow editing target sites from host
+      - ./target_site.txt:/app/target_site.txt
+      # Allow editing env from host (optional, overrides environment section if used with --env-file)
+      - ./.env:/app/.env
+    # Allocate a pseudo-TTY to see output nicely
+    tty: true
