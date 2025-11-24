@@ -13,6 +13,8 @@ load_dotenv()
 from prometheus_client import start_http_server
 from metrics import Metrics
 
+VERSION = "1.2.0 (Auth+StrictVerify)"
+
 THREADS = int(os.getenv("THREADS", 10))
 DURATION = int(os.getenv("DURATION", 30))
 HEADLESS = os.getenv("HEADLESS", "False").lower() == "true"
@@ -148,6 +150,7 @@ async def main():
         logging.error("No targets found. Exiting.")
         return
 
+    logging.info(f"Starting Crawler v{VERSION}")
     logging.info(f"Configuration:")
     logging.info(f"  Targets: {len(config.targets)}")
     logging.info(f"  Threads: {THREADS}")
