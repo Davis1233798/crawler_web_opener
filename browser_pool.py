@@ -68,12 +68,10 @@ class BrowserPool:
     async def create_context(self, proxy: Union[str, Dict, None] = None) -> BrowserContext:
         """
         從池中創建新的 Context (低成本操作)
+        包含安全防護措施以降低免費代理的風險
         
         Args:
-            proxy: 代理配置,可以是:
-                - str: 代理 URL (例如 'http://ip:port')
-                - dict: 包含 'server', 'username', 'password' 的字典
-                - None: 不使用代理
+            proxy: 代理配置
             
         Returns:
             BrowserContext: 新的瀏覽器上下文
@@ -94,7 +92,6 @@ class BrowserPool:
         proxy_config = None
         if proxy:
             if isinstance(proxy, dict):
-                # 字典格式:{"server": "...", "username": "...", "password": "..."}
                 proxy_config = {"server": proxy.get('server')}
                 if proxy.get('username') and proxy.get('password'):
                     proxy_config['username'] = proxy['username']
@@ -103,25 +100,143 @@ class BrowserPool:
                 else:
                     logging.debug(f"Using proxy without auth: {proxy['server']}")
             elif isinstance(proxy, str):
-                # 字符串格式(向後兼容)
                 proxy_config = {"server": proxy}
                 logging.debug(f"Using proxy (string format): {proxy}")
+        
+        # ==== 安全防護配置 ====
+        # 禁用危險的瀏覽器權限
+        permissions = []  # 空列表 = 拒絕所有權限請求
         
         # 創建 context (成本遠低於創建 browser)
         context = await browser.new_context(
             proxy=proxy_config,
+            accept_downloads=False,  # 禁止下載(防止惡意文件)
+            bypass_csp=False,  # 不繞過 CSP(內容安全策略)
+            ignore_https_errors=False,  # 不忽略 HTTPS 錯誤(確保加密連接)
+            java_script_enabled=True,  # 需要 JS 但會通過其他方式限制
+            permissions=permissions,  # 禁用所有權限
             **fingerprint
         )
         
-        # 注入增強版反檢測腳本
+        # 阻止危險的權限請求
+        await context.grant_permissions([])  # 明確拒絕所有權限
+        
+        # 注入安全腳本
+        security_script = """
+        // 禁用 WebRTC (防止真實 IP 洩漏)
+        (function() {
+            const noop = function() {};
+            window.RTCPeerConnection = undefined;
+            window.RTCSessionDescription = undefined;
+            window.RTCIceCandidate = undefined;
+            window.webkitRTCPeerConnection = undefined;
+            window.mozRTCPeerConnection = undefined;
+            
+            // 禁用地理位置 API
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition = function(success, error) {
+                    if (error) error({ code: 1, message: 'User denied geolocation' });
+                };
+                navigator.geolocation.watchPosition = noop;
+            }
+            
+            // 禁用媒體設備訪問
+            if (navigator.mediaDevices) {
+                navigator.mediaDevices.getUserMedia = function() {
+                    return Promise.reject(new Error('Permission denied'));
+                };
+                navigator.mediaDevices.enumerateDevices = function() {
+                    return Promise.resolve([]);
+                };
+            }
+            
+            // 禁用通知
+            if (window.Notification) {
+                window.Notification.requestPermission = function() {
+                    return Promise.resolve('denied');
+                };
+            }
+            
+            // 阻止 Canvas 指紋追蹤(添加噪聲)
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function() {
+                // 添加微小隨機噪聲
+                const context = this.getContext('2d');
+                if (context) {
+                    const imageData = context.getImageData(0, 0, this.width, this.height);
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        imageData.data[i] = imageData.data[i] + Math.random() * 2 - 1;
+                    }
+                    context.putImageData(imageData, 0, 0);
+                }
+                return originalToDataURL.apply(this, arguments);
+            };
+            
+            // 攔截並記錄可疑的外部請求
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options) {
+                // 只允許 HTTPS 請求
+                if (typeof url === 'string' && url.startsWith('http://')) {
+                    console.warn('[SECURITY] Blocked insecure HTTP request:', url);
+                    return Promise.reject(new Error('Insecure HTTP request blocked'));
+                }
+                return originalFetch.apply(this, arguments);
+            };
+        })();
+        """
+        
+        # 注入增強版反檢測腳本 + 安全腳本
         await context.add_init_script(get_stealth_script(fingerprint_extra))
+        await context.add_init_script(security_script)
+        
+        # 攔截網絡請求 - 阻止已知的追蹤器和不安全連接
+        async def handle_route(route, request):
+            url = request.url
+            
+            # 阻止不安全的 HTTP 連接到外部資源
+            if url.startswith('http://') and not url.startswith('http://localhost'):
+                # 允許主域名的 HTTP(因為我們的目標可能是 HTTP)
+                # 但阻止外部資源的 HTTP
+                if request.resource_type in ['script', 'stylesheet', 'fetch', 'xhr']:
+                    logging.warning(f"[SECURITY] Blocked insecure external resource: {url}")
+                    await route.abort()
+                    return
+            
+            # 阻止已知的追蹤器域名
+            tracking_domains = [
+                'google-analytics.com',
+                'googletagmanager.com',
+                'facebook.com/tr',
+                'doubleclick.net',
+                'analytics',
+                'tracking',
+                'telemetry'
+            ]
+            
+            if any(domain in url.lower() for domain in tracking_domains):
+                logging.debug(f"[SECURITY] Blocked tracking request: {url}")
+                await route.abort()
+                return
+            
+            # 允許其他請求
+            await route.continue_()
+        
+        # 註冊請求攔截器
+        await context.route("**/*", handle_route)
+        
+        # 設置額外的 HTTP 頭部以提升安全性
+        await context.set_extra_http_headers({
+            'DNT': '1',  # Do Not Track
+            'Upgrade-Insecure-Requests': '1',  # 請求升級到 HTTPS
+        })
         
         # 記錄活躍的 context
         self.contexts.append(context)
         
-        logging.debug(f"Created context with fingerprint: UA={fingerprint.get('user_agent', 'N/A')[:50]}...")
+        logging.debug(f"Created SECURE context with fingerprint: UA={fingerprint.get('user_agent', 'N/A')[:50]}...")
         
         return context
+
     
     async def close_context(self, context: BrowserContext):
         """關閉 Context (釋放資源)"""
