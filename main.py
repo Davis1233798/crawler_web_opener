@@ -165,10 +165,10 @@ async def main():
     browser_pool = BrowserPool(pool_size=BROWSER_POOL_SIZE, headless=HEADLESS)
     await browser_pool.initialize()
     
-    # 初始化 Memory Proxy Pool(減少文件 I/O)
+    # 初始化 Memory Proxy Pool(减少文件 I/O + 严格验证)
     logging.info("Initializing Memory Proxy Pool...")
     proxy_pool = MemoryProxyPool(min_pool_size=THREADS * 2)
-    await proxy_pool.initialize()
+    await proxy_pool.initialize(strict_verify=True)  # 启用严格验证
     
     # 創建 BrowserBot 實例 (傳入 proxy_pool 以支援失敗回報)
     bot = BrowserBot(browser_pool, proxy_pool)
