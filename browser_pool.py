@@ -5,7 +5,7 @@ Browser 池化管理器
 import asyncio
 import logging
 import random
-from typing import List, Optional
+from typing import List, Optional, Union, Dict
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from fingerprint_generator import get_random_fingerprint, get_stealth_script
 
@@ -65,12 +65,15 @@ class BrowserPool:
         
         logging.info(f"Browser Pool initialized with {len(self.browsers)} browsers.")
     
-    async def create_context(self, proxy: Optional[str] = None) -> BrowserContext:
+    async def create_context(self, proxy: Union[str, Dict, None] = None) -> BrowserContext:
         """
         從池中創建新的 Context (低成本操作)
         
         Args:
-            proxy: 代理地址
+            proxy: 代理配置,可以是:
+                - str: 代理 URL (例如 'http://ip:port')
+                - dict: 包含 'server', 'username', 'password' 的字典
+                - None: 不使用代理
             
         Returns:
             BrowserContext: 新的瀏覽器上下文
@@ -87,10 +90,22 @@ class BrowserPool:
         # 提取額外參數
         fingerprint_extra = fingerprint.pop('_extra', None)
         
-        # Proxy 配置
+        # Proxy 配置 - 支援字符串和字典格式
         proxy_config = None
         if proxy:
-            proxy_config = {"server": proxy}
+            if isinstance(proxy, dict):
+                # 字典格式:{"server": "...", "username": "...", "password": "..."}
+                proxy_config = {"server": proxy.get('server')}
+                if proxy.get('username') and proxy.get('password'):
+                    proxy_config['username'] = proxy['username']
+                    proxy_config['password'] = proxy['password']
+                    logging.debug(f"Using authenticated proxy: {proxy['server']} (user: {proxy['username']})")
+                else:
+                    logging.debug(f"Using proxy without auth: {proxy['server']}")
+            elif isinstance(proxy, str):
+                # 字符串格式(向後兼容)
+                proxy_config = {"server": proxy}
+                logging.debug(f"Using proxy (string format): {proxy}")
         
         # 創建 context (成本遠低於創建 browser)
         context = await browser.new_context(
@@ -166,7 +181,7 @@ class BrowserPool:
 class BrowserSession:
     """Browser 會話包裝器,自動管理 context 生命週期"""
     
-    def __init__(self, pool: BrowserPool, proxy: Optional[str] = None):
+    def __init__(self, pool: BrowserPool, proxy: Union[str, Dict, None] = None):
         self.pool = pool
         self.proxy = proxy
         self.context: Optional[BrowserContext] = None

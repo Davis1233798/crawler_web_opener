@@ -1,15 +1,63 @@
 """
 內存代理池管理器
 減少磁碟 I/O,使用內存緩存代理列表
+支援兩種代理格式:
+  1. protocol://ip:port (不帶認證)
+  2. ip:port:username:password (帶認證)
 """
 import os
 import asyncio
 import logging
 import random
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict
 from proxy_manager import fetch_all_proxies, check_proxy
 import concurrent.futures
+
+
+def parse_proxy(proxy_str: str) -> Optional[Dict[str, str]]:
+    """
+    解析代理字符串,支援兩種格式:
+    1. protocol://ip:port
+    2. ip:port:username:password
+    
+    Returns:
+        Dict with keys: 'server', 'username' (optional), 'password' (optional), 'protocol' (optional)
+    """
+    if not proxy_str:
+        return None
+    
+    proxy_str = proxy_str.strip()
+    
+    # 格式 1: protocol://ip:port
+    if '://' in proxy_str:
+        return {
+            'server': proxy_str,
+            'username': None,
+            'password': None
+        }
+    
+    # 格式 2: ip:port:username:password
+    parts = proxy_str.split(':')
+    if len(parts) == 4:
+        ip, port, username, password = parts
+        # 默認使用 http 協議
+        return {
+            'server': f'http://{ip}:{port}',
+            'username': username,
+            'password': password
+        }
+    elif len(parts) == 2:
+        # ip:port 格式(無認證)
+        ip, port = parts
+        return {
+            'server': f'http://{ip}:{port}',
+            'username': None,
+            'password': None
+        }
+    
+    logging.warning(f"Unknown proxy format: {proxy_str}")
+    return None
 
 class MemoryProxyPool:
     """內存代理池 - 大幅減少文件 I/O"""
@@ -57,15 +105,21 @@ class MemoryProxyPool:
         
         logging.info(f"Memory Proxy Pool initialized with {len(self.working_proxies)} proxies.")
     
-    async def get_proxy(self) -> Optional[str]:
-        """從內存獲取代理(無 I/O)"""
+    async def get_proxy(self) -> Optional[Dict[str, str]]:
+        """
+        從內存獲取代理(無 I/O)
+        
+        Returns:
+            Dict with 'server', 'username', 'password' keys, or None if pool is empty
+        """
         async with self.lock:
             if not self.working_proxies:
                 logging.warning("Proxy pool is empty!")
                 return None
             
-            # 隨機選擇
-            return random.choice(self.working_proxies)
+            # 隨機選擇並解析
+            proxy_str = random.choice(self.working_proxies)
+            return parse_proxy(proxy_str)
     
     async def mark_failed(self, proxy: str):
         """標記代理失敗"""
