@@ -2,6 +2,7 @@ import asyncio
 import random
 import logging
 from playwright.async_api import BrowserContext
+from metrics import Metrics
 
 class BrowserBot:
     """
@@ -128,9 +129,12 @@ class BrowserBot:
                     break
             
             logging.info("Session finished.")
+            Metrics().tasks_completed.inc()
+            Metrics().session_duration.observe(asyncio.get_event_loop().time() - start_time)
             
         except Exception as e:
             logging.error(f"Browser error: {e}")
+            Metrics().tasks_failed.inc()
         finally:
             # 關閉 context,釋放資源 (browser 保留在池中)
             if context:

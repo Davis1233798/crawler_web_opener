@@ -3,3 +3,4 @@ playwright
 python-dotenv
 fake-useragent
 beautifulsoup4
+prometheus-client

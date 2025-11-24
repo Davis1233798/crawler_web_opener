@@ -1,32 +1,42 @@
-# Implementation Plan - Local Proxy Source
+# Optimization Implementation Plan
 
-## Goal
-Enable loading proxies from a local `proxies.json` file when `SCRAPY_TYPE` is set to `3`. Update documentation to reflect this new method and ensure it is in Traditional Chinese.
+## Goal Description
+Optimize the crawler's viewing efficiency, which has dropped by 50%. The primary focus is on removing bad proxies from the pool immediately upon failure and tuning timeouts to fail fast.
+
+## User Review Required
+> [!IMPORTANT]
+> I will be modifying `BrowserBot` to interact with `MemoryProxyPool`. This introduces a dependency between the bot and the proxy pool.
 
 ## Proposed Changes
 
-### Configuration
-#### [MODIFY] [.env](file:///c:/Users/solidityDeveloper/crawler_web_opener/.env)
-- Change `SCRAPY_TYPE` to `3`.
+### Core Logic
 
-### Code
+#### [MODIFY] [browser_bot.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/browser_bot.py)
+- Update `__init__` to accept `proxy_pool`.
+- In `run` method:
+    - If `page.goto` fails or times out, call `self.proxy_pool.mark_failed(proxy)`.
+    - Reduce `page.goto` timeout from 60s to 30s.
+
+#### [MODIFY] [main.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/main.py)
+- Pass `proxy_pool` when initializing `BrowserBot`.
+
+#### [MODIFY] [memory_proxy_pool.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/memory_proxy_pool.py)
+- Ensure `mark_failed` efficiently removes the proxy and adds it to `failed_proxies`.
+- Add logic to avoid re-adding recently failed proxies during refill.
+
 #### [MODIFY] [proxy_manager.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/proxy_manager.py)
-- Import `json`.
-- Add `fetch_local_proxies()` function:
-    - Read `proxies.json`.
-    - Parse JSON and extract `proxy` field (e.g., "socks5://...").
-    - Return list of proxy strings.
-- Update `fetch_all_proxies()`:
-    - Add logic for `SCRAPY_TYPE == "3"`.
-    - Call `fetch_local_proxies()`.
-
-### Documentation
-#### [MODIFY] [README.md](file:///c:/Users/solidityDeveloper/crawler_web_opener/README.md)
-- Update `SCRAPY_TYPE` description.
-- Add explanation for Type 1, 2, and 3 in Traditional Chinese.
+- Reduce `check_proxy` timeout from 10s to 5s to speed up validation.
+- Add latency tracking (optional, but good for "efficiency").
 
 ## Verification Plan
 
 ### Automated Tests
-- Run `python proxy_manager.py` to verify it fetches proxies from the local file.
-- Check logs for "Fetched X proxies from Local File".
+- Run `test_io_performance.py` (if applicable) or create a new test script `test_optimization.py` that:
+    - Mocks `BrowserPool` and `MemoryProxyPool`.
+    - Simulates a proxy failure.
+    - Verifies that `mark_failed` is called and the proxy is removed.
+
+### Manual Verification
+- Run `main.py` and observe logs.
+- Check if "Marked proxy as failed" logs appear.
+- Monitor `tasks_completed` vs `tasks_failed` via logs or metrics.

@@ -12,6 +12,7 @@ services:
     volumes:
       # Persist the proxy cache
       - ./proxies.txt:/app/proxies.txt
+      - ./proxies.json:/app/proxies.json
       # Allow editing target sites from host
       - ./target_site.txt:/app/target_site.txt
       # Allow editing env from host (optional, overrides environment section if used with --env-file)

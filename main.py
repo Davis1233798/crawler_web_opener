@@ -10,10 +10,14 @@ from browser_bot import BrowserBot
 # 單次載入環境變數(降低 I/O)
 load_dotenv()
 
+from prometheus_client import start_http_server
+from metrics import Metrics
+
 THREADS = int(os.getenv("THREADS", 10))
 DURATION = int(os.getenv("DURATION", 30))
 HEADLESS = os.getenv("HEADLESS", "False").lower() == "true"
 BROWSER_POOL_SIZE = int(os.getenv("BROWSER_POOL_SIZE", 5))
+METRICS_PORT = int(os.getenv("METRICS_PORT", 8000))
 
 # 優化日誌配置(使用緩衝)
 logging.basicConfig(
@@ -60,6 +64,8 @@ async def browser_worker(worker_id, queue, bot):
     Worker 執行任務
     """
     logging.info(f"Worker {worker_id} started.")
+    metrics = Metrics()
+    metrics.active_threads.inc()
     
     # 每個 worker 啟動時隨機延遲(避免同時啟動)
     await asyncio.sleep(random.uniform(1, 5))
@@ -87,6 +93,9 @@ async def browser_worker(worker_id, queue, bot):
             await asyncio.sleep(random.uniform(0.2, 1.0))
             
             logging.info(f"Worker {worker_id} finished task. Queue size: {queue.qsize()}")
+            metrics.queue_size.set(queue.qsize())
+    
+    metrics.active_threads.dec()
 
 
 async def task_producer(queue, proxy_pool, config, limit):
@@ -126,6 +135,7 @@ async def task_producer(queue, proxy_pool, config, limit):
             count += 1
         
         logging.info(f"Producer: Added {count} tasks to queue.")
+        Metrics().queue_size.set(queue.qsize())
         await asyncio.sleep(1)
 
 
@@ -144,6 +154,11 @@ async def main():
     logging.info(f"  Duration: {DURATION}s")
     logging.info(f"  Headless: {HEADLESS}")
     logging.info(f"  Browser Pool Size: {BROWSER_POOL_SIZE}")
+    logging.info(f"  Metrics Port: {METRICS_PORT}")
+
+    # Start Prometheus Metrics Server
+    start_http_server(METRICS_PORT)
+    metrics = Metrics()
     
     # 初始化 Browser Pool(一次性 browser 啟動)
     logging.info("Initializing Browser Pool...")

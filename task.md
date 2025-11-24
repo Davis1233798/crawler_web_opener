@@ -1,9 +1,8 @@
-# Task: Implement Local Proxy Source (SCRAPY_TYPE=3)
+# Task: Implement Grafana Monitoring
 
-- [x] Create implementation plan <!-- id: 0 -->
-- [x] Modify `proxy_manager.py` to support `SCRAPY_TYPE=3` <!-- id: 1 -->
-    - [x] Implement `fetch_local_proxies` to read `proxies.json`
-    - [x] Update `fetch_all_proxies` to include type 3 logic
-- [x] Update `.env` to set `SCRAPY_TYPE=3` <!-- id: 2 -->
-- [x] Update `README.md` with Traditional Chinese documentation <!-- id: 3 -->
-- [x] Verify proxy loading <!-- id: 4 -->
+- [x] Add `prometheus-client` to `requirements.txt` <!-- id: 0 -->
+- [x] Create `metrics.py` <!-- id: 1 -->
+- [x] Integrate metrics into `main.py` <!-- id: 2 -->
+- [x] Integrate metrics into `browser_bot.py` <!-- id: 3 -->
+- [x] Create `GRAFANA_SETUP.md` <!-- id: 4 -->
+- [/] Verify metrics endpoint <!-- id: 5 -->
