@@ -81,18 +81,31 @@ class MemoryProxyPool:
         self._save_task = None
         self._refill_task = None
         
-    async def initialize(self):
-        """啟動時從文件載入代理(僅一次 I/O)"""
+    async def initialize(self, strict_verify: bool = True):
+        """啟動時從文件載入代理(僅一次 I/O)
+        
+        Args:
+            strict_verify: 是否嚴格驗證代理(測試實際目標網站)
+        """
         logging.info("Initializing Memory Proxy Pool...")
         
         # 從文件載入
+        raw_proxies = []
         if os.path.exists(self.cache_file):
             try:
                 with open(self.cache_file, "r") as f:
-                    self.working_proxies = [line.strip() for line in f if line.strip()]
-                logging.info(f"Loaded {len(self.working_proxies)} proxies from cache file.")
+                    raw_proxies = [line.strip() for line in f if line.strip()]
+                logging.info(f"Loaded {len(raw_proxies)} proxies from cache file.")
             except Exception as e:
                 logging.error(f"Failed to load cache file: {e}")
+        
+        # 嚴格驗證代理
+        if raw_proxies and strict_verify:
+            logging.info("Strictly verifying proxies against target website...")
+            self.working_proxies = await self._verify_proxies_batch(raw_proxies, strict=True)
+            logging.info(f"✅ {len(self.working_proxies)}/{len(raw_proxies)} proxies passed strict verification")
+        else:
+            self.working_proxies = raw_proxies
         
         # 如果緩存不足,立即補充
         if len(self.working_proxies) < self.min_pool_size:
@@ -155,14 +168,25 @@ class MemoryProxyPool:
             self.working_proxies.extend(verified)
             logging.info(f"Added {len(verified)} new proxies. Pool size: {len(self.working_proxies)}")
     
-    async def _verify_proxies_batch(self, proxies: List[str]) -> List[str]:
-        """批量驗證代理"""
+    async def _verify_proxies_batch(self, proxies: List[str], strict: bool = False) -> List[str]:
+        """批量驗證代理
+        
+        Args:
+            proxies: 代理列表
+            strict: 是否嚴格驗證(測試實際目標網站)
+        """
         verified = []
         
         def verify_batch(proxy_list):
             results = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
-                future_to_proxy = {executor.submit(check_proxy, p, timeout=8): p for p in proxy_list}
+                if strict:
+                    # 嚴格模式:測試實際目標網站
+                    future_to_proxy = {executor.submit(self._strict_check_proxy, p): p for p in proxy_list}
+                else:
+                    # 普通模式:快速檢查
+                    future_to_proxy = {executor.submit(check_proxy, p, timeout=8): p for p in proxy_list}
+                
                 for future in concurrent.futures.as_completed(future_to_proxy):
                     proxy = future_to_proxy[future]
                     try:
@@ -175,6 +199,56 @@ class MemoryProxyPool:
         verified = await asyncio.to_thread(verify_batch, proxies)
         logging.info(f"Verified {len(verified)}/{len(proxies)} proxies.")
         return verified
+    
+    def _strict_check_proxy(self, proxy_str: str, timeout: int = 15) -> bool:
+        """嚴格檢查代理是否可用(測試實際目標網站)"""
+        import requests
+        from urllib.parse import urlparse
+        
+        # 解析代理
+        proxy_info = parse_proxy(proxy_str)
+        if not proxy_info:
+            return False
+        
+        # 構建代理 URL
+        proxy_url = proxy_info['server']
+        if proxy_info.get('username') and proxy_info.get('password'):
+            # 添加認證
+            parsed = urlparse(proxy_info['server'])
+            proxy_url = f"{parsed.scheme}://{proxy_info['username']}:{proxy_info['password']}@{parsed.netloc}"
+        
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url
+        }
+        
+        # 讀取目標網站
+        try:
+            with open('target_site.txt', 'r') as f:
+                target_url = f.read().strip()
+        except:
+            target_url = "https://httpbin.org/ip"  # 默認測試 URL
+        
+        try:
+            # 測試代理是否能訪問目標網站
+            response = requests.get(target_url, proxies=proxies, timeout=timeout, allow_redirects=True)
+            
+            # 檢查 HTTP 狀態碼
+            if response.status_code >= 200 and response.status_code < 400:
+                logging.debug(f"✅ Proxy verified: {proxy_str[:50]}...")
+                return True
+            else:
+                logging.debug(f"❌ Proxy failed (HTTP {response.status_code}): {proxy_str[:50]}...")
+                return False
+        except requests.exceptions.ProxyError:
+            logging.debug(f"❌ Proxy connection failed: {proxy_str[:50]}...")
+            return False
+        except requests.exceptions.Timeout:
+            logging.debug(f"❌ Proxy timeout: {proxy_str[:50]}...")
+            return False
+        except Exception as e:
+            logging.debug(f"❌ Proxy error ({str(e)[:30]}): {proxy_str[:50]}...")
+            return False
     
     async def _periodic_save(self):
         """定期保存到磁碟(減少 I/O 頻率)"""
