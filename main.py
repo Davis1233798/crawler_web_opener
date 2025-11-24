@@ -170,8 +170,8 @@ async def main():
     proxy_pool = MemoryProxyPool(min_pool_size=THREADS * 2)
     await proxy_pool.initialize()
     
-    # 創建 BrowserBot 實例
-    bot = BrowserBot(browser_pool)
+    # 創建 BrowserBot 實例 (傳入 proxy_pool 以支援失敗回報)
+    bot = BrowserBot(browser_pool, proxy_pool)
     
     # 任務隊列
     queue = asyncio.Queue(maxsize=THREADS * 2)

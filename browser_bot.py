@@ -9,12 +9,14 @@ class BrowserBot:
     重構版 BrowserBot - 使用 BrowserPool 的 context
     不再每次創建新的 browser,大幅降低 I/O
     """
-    def __init__(self, browser_pool):
+    def __init__(self, browser_pool, proxy_pool=None):
         """
         Args:
             browser_pool: BrowserPool 實例
+            proxy_pool: MemoryProxyPool 實例 (可選，用於回報失敗的代理)
         """
         self.browser_pool = browser_pool
+        self.proxy_pool = proxy_pool
 
     async def run(self, url, proxy=None, min_duration=30, should_exit_callback=None):
         """
@@ -38,7 +40,8 @@ class BrowserBot:
             logging.info(f"Navigating to {url}")
             try:
                 # Wait for network idle to ensure page is fully loaded
-                await page.goto(url, timeout=60000, wait_until='networkidle')
+                # Reduced timeout from 60s to 30s for faster failure detection
+                await page.goto(url, timeout=30000, wait_until='networkidle')
                 
                 # Double check load state
                 await page.wait_for_load_state('domcontentloaded')
@@ -49,6 +52,10 @@ class BrowserBot:
                 
             except Exception as e:
                 logging.error(f"Navigation failed: {e}")
+                # Report failed proxy to pool for removal
+                if self.proxy_pool and proxy:
+                    await self.proxy_pool.mark_failed(proxy)
+                    logging.info(f"Marked proxy as failed: {proxy}")
                 return
 
             # Simulate activity
