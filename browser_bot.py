@@ -18,6 +18,20 @@ class BrowserBot:
         self.browser_pool = browser_pool
         self.proxy_pool = proxy_pool
 
+    async def human_mouse_move(self, page, start_x, start_y, end_x, end_y):
+        """模擬人類自然的滑鼠移動軌跡 (貝塞爾曲線)"""
+        steps = random.randint(20, 50)
+        for i in range(steps):
+            t = i / steps
+            # 簡單的線性插值加上隨機擾動，模擬手抖
+            x = start_x + (end_x - start_x) * t + random.uniform(-5, 5)
+            y = start_y + (end_y - start_y) * t + random.uniform(-5, 5)
+            try:
+                await page.mouse.move(x, y)
+                await asyncio.sleep(random.uniform(0.001, 0.01))
+            except:
+                pass
+
     async def run(self, url, proxy=None, min_duration=30, should_exit_callback=None):
         """
         使用 browser pool 的 context 訪問 URL 並模擬活動
@@ -48,7 +62,7 @@ class BrowserBot:
                 await page.wait_for_load_state('load')
                 
                 # Small delay to let JS settle
-                await asyncio.sleep(2)
+                await asyncio.sleep(random.uniform(2, 4))
                 
             except Exception as e:
                 logging.error(f"Navigation failed: {e}")
@@ -61,6 +75,10 @@ class BrowserBot:
             # Simulate activity
             logging.info(f"Simulating activity for at least {min_duration} seconds...")
             start_time = asyncio.get_event_loop().time()
+            
+            # 獲取頁面尺寸
+            viewport_width = await page.evaluate("window.innerWidth")
+            viewport_height = await page.evaluate("window.innerHeight")
             
             while True:
                 current_time = asyncio.get_event_loop().time()
@@ -83,51 +101,71 @@ class BrowserBot:
                     if page.is_closed():
                         break
 
-                    # Random scroll
-                    await page.evaluate(f"window.scrollBy(0, {random.randint(-100, 300)})")
+                    # === 擬人化操作 ===
+                    action_type = random.choice(['scroll', 'move', 'pause', 'select'])
                     
-                    # Find clickable elements
-                    elements = await page.query_selector_all('a, button, input[type="submit"], div')
-                    if elements:
-                        element = random.choice(elements)
-                        if await element.is_visible():
-                            # Hover is safe
+                    if action_type == 'scroll':
+                        # 隨機滾動 (模擬閱讀)
+                        scroll_amount = random.randint(100, 500)
+                        direction = random.choice([1, 1, 1, -1]) # 更多向下滾動
+                        await page.evaluate(f"window.scrollBy(0, {scroll_amount * direction})")
+                        await asyncio.sleep(random.uniform(0.5, 2.0))
+                        
+                    elif action_type == 'move':
+                        # 隨機滑鼠移動
+                        start_x = random.randint(0, viewport_width)
+                        start_y = random.randint(0, viewport_height)
+                        end_x = random.randint(0, viewport_width)
+                        end_y = random.randint(0, viewport_height)
+                        await self.human_mouse_move(page, start_x, start_y, end_x, end_y)
+                        
+                    elif action_type == 'pause':
+                        # 隨機暫停 (模擬思考/閱讀)
+                        pause_time = random.uniform(1.0, 5.0)
+                        logging.debug(f"Pausing for {pause_time:.1f}s")
+                        await asyncio.sleep(pause_time)
+                        
+                    elif action_type == 'select':
+                        # 隨機選擇文本 (偶爾發生)
+                        if random.random() < 0.3:
                             try:
-                                await element.hover(timeout=2000)
-                            except Exception as e:
-                                # If hover fails due to interception, try to remove the intercepting element
-                                if "intercepts pointer events" in str(e):
-                                    logging.warning("Element intercepted. Attempting to remove overlay...")
-                                    await page.evaluate("""
-                                        (function() {
-                                            const overlays = document.querySelectorAll('div[znid], div[donto], div[class*="overlay"], div[class*="modal"]');
-                                            overlays.forEach(el => el.remove());
-                                        })();
-                                    """)
+                                await page.evaluate("""
+                                    const p = document.querySelector('p');
+                                    if(p) {
+                                        const range = document.createRange();
+                                        range.selectNodeContents(p);
+                                        const sel = window.getSelection();
+                                        sel.removeAllRanges();
+                                        sel.addRange(range);
+                                    }
+                                """)
+                                await asyncio.sleep(random.uniform(0.5, 1.5))
+                                # 清除選擇
+                                await page.evaluate("window.getSelection().removeAllRanges()")
+                            except:
                                 pass
-                            
-                            # Click with lower probability
-                            try:
-                                await element.click(timeout=1000)
-                            except Exception as e:
-                                # Handle click interception similarly
-                                if "intercepts pointer events" in str(e):
-                                    logging.warning("Click intercepted. Removing overlays...")
-                                    await page.evaluate("""
-                                        (function() {
-                                            const overlays = document.querySelectorAll('div[znid], div[donto], div[class*="overlay"], div[class*="modal"]');
-                                            overlays.forEach(el => el.remove());
-                                        })();
-                                    """)
-                                pass
-                            
-                    # Click random position (safe)
-                    width = await page.evaluate("window.innerWidth")
-                    height = await page.evaluate("window.innerHeight")
-                    try:
-                        await page.mouse.click(random.randint(0, width), random.randint(0, height))
-                    except:
-                        pass
+
+                    # Find clickable elements (偶爾點擊)
+                    if random.random() < 0.2:
+                        elements = await page.query_selector_all('a, button, input[type="submit"], div')
+                        if elements:
+                            element = random.choice(elements)
+                            if await element.is_visible():
+                                try:
+                                    # 模擬滑鼠移動到元素
+                                    box = await element.bounding_box()
+                                    if box:
+                                        await self.human_mouse_move(page, 
+                                            random.randint(0, viewport_width), random.randint(0, viewport_height),
+                                            box['x'] + box['width']/2, box['y'] + box['height']/2
+                                        )
+                                        await element.hover(timeout=2000)
+                                        await asyncio.sleep(random.uniform(0.2, 0.5))
+                                        # 點擊
+                                        if random.random() < 0.5:
+                                            await element.click(timeout=1000)
+                                except Exception:
+                                    pass
                     
                     await asyncio.sleep(random.uniform(0.5, 2.0))
                     
