@@ -1,42 +1,36 @@
-# Optimization Implementation Plan
+# Fast IP Rotation (Hot Swap)
 
-## Goal Description
-Optimize the crawler's viewing efficiency, which has dropped by 50%. The primary focus is on removing bad proxies from the pool immediately upon failure and tuning timeouts to fail fast.
+The goal is to drastically reduce the time to change IPs by modifying the network interface of a running VM, rather than destroying and recreating the entire VM.
 
 ## User Review Required
 > [!IMPORTANT]
-> I will be modifying `BrowserBot` to interact with `MemoryProxyPool`. This introduces a dependency between the bot and the proxy pool.
+> **Architecture Change**: Child VMs will now be **persistent** (long-running). They will run a loop internally: `Run Crawler` -> `Swap IP` -> `Repeat`.
+> **Cost Implication**: You will pay for the VM uptime continuously, but you save on boot time overhead.
+> **Prerequisite**: The Child VMs need permission to modify their own network settings.
 
 ## Proposed Changes
 
-### Core Logic
+### crawler-go/gcp
+#### [NEW] [child_runner.sh](file:///c:/Users/solidityDeveloper/crawler_web_opener/crawler-go/gcp/child_runner.sh)
+- A script that runs inside the Child VM.
+- **Loop**:
+    1.  **Run Crawler**: Execute the Docker container.
+    2.  **Rotate IP**:
+        -   Get current Instance Name, Zone, Project via Metadata.
+        -   Call GCP API `deleteAccessConfig` (Detach IP).
+        -   Call GCP API `addAccessConfig` (Attach new random IP).
+    3.  **Sleep**: Optional short delay.
 
-#### [MODIFY] [browser_bot.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/browser_bot.py)
-- Update `__init__` to accept `proxy_pool`.
-- In `run` method:
-    - If `page.goto` fails or times out, call `self.proxy_pool.mark_failed(proxy)`.
-    - Reduce `page.goto` timeout from 60s to 30s.
+#### [MODIFY] [deploy.sh](file:///c:/Users/solidityDeveloper/crawler_web_opener/crawler-go/gcp/deploy.sh)
+- **Remove** the self-destruct logic.
+- **Update Startup Script**: Instead of running docker once, download and run `child_runner.sh`.
+- **Instance Management**: Only create instances if they don't exist (scale up/down logic).
 
-#### [MODIFY] [main.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/main.py)
-- Pass `proxy_pool` when initializing `BrowserBot`.
-
-#### [MODIFY] [memory_proxy_pool.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/memory_proxy_pool.py)
-- Ensure `mark_failed` efficiently removes the proxy and adds it to `failed_proxies`.
-- Add logic to avoid re-adding recently failed proxies during refill.
-
-#### [MODIFY] [proxy_manager.py](file:///c:/Users/solidityDeveloper/crawler_web_opener/proxy_manager.py)
-- Reduce `check_proxy` timeout from 10s to 5s to speed up validation.
-- Add latency tracking (optional, but good for "efficiency").
+### crawler-go/terraform
+#### [MODIFY] [compute.tf](file:///c:/Users/solidityDeveloper/crawler_web_opener/crawler-go/terraform/compute.tf)
+- Ensure the Service Account used by Child VMs has `compute.instances.update` permission. (Currently using default SA, might need a custom one or IAM binding).
 
 ## Verification Plan
-
-### Automated Tests
-- Run `test_io_performance.py` (if applicable) or create a new test script `test_optimization.py` that:
-    - Mocks `BrowserPool` and `MemoryProxyPool`.
-    - Simulates a proxy failure.
-    - Verifies that `mark_failed` is called and the proxy is removed.
-
-### Manual Verification
-- Run `main.py` and observe logs.
-- Check if "Marked proxy as failed" logs appear.
-- Monitor `tasks_completed` vs `tasks_failed` via logs or metrics.
+1.  **Deploy**: Update Mother VM with new scripts.
+2.  **Monitor**: Watch `crawler_loop.log`.
+3.  **Verify IP**: Check the external IP of a child VM in GCP Console, wait for "Rotate" log, check IP again. It should change without the VM restarting.

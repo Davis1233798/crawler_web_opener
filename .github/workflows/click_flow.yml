@@ -1,0 +1,38 @@
+name: Click Flow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  click-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install Playwright dependencies
+        run: |
+          go run github.com/playwright-community/playwright-go/cmd/playwright@v0.4001.0 install --with-deps
+
+      - name: Run Crawler
+        run: |
+          cd crawler-go
+          go mod tidy
+          go run cmd/crawler/main.go
+        env:
+          SINGLE_RUN: "true"
+          DURATION: "30" # Run for 30 seconds if single run logic relies on duration, or just to be safe
+          # Add other necessary env vars here, e.g. from secrets
+          # TARGET_URL: ${{ secrets.TARGET_URL }}
+
+      - name: Trigger next run
+        if: success()
+        run: |
+          gh workflow run click_flow.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
