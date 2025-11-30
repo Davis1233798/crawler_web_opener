@@ -1,5 +1,5 @@
 .env
-/crawler-go
+
 /venv
 /__pycache__
 /proxy
